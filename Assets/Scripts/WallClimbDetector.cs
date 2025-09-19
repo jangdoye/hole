@@ -1,18 +1,27 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
+[RequireComponent(typeof(CharacterController))]
 public class WallClimbDetector : MonoBehaviour
 {
-    public PlayerController player;          // ÇÃ·¹ÀÌ¾î ÄÁÆ®·Ñ·¯
-    public LayerMask climbableMask;          // Climbable ·¹ÀÌ¾î
+    public PlayerController player;
+    public LayerMask climbableMask;
+
     [Header("Detection")]
-    public float detectDistance = 0.9f;      // Àü¹æ °¨Áö °Å¸®(0.7~1.0)
-    public float stickDistance = 0.30f;     // º®°ú À¯ÁöÇÒ °£°İ ( radius+0.02)
-    public float maxAlignAngle = 80f;       // Á¤¸é ±âÁØ Çã¿ë °¢µµ
-    public bool requireForwardInput = true;  // W ÀÔ·Â ¾ø¾îµµ ºÙ´ÂÁö Å×½ºÆ®¿ë
+    public float detectDistance = 0.9f;   // 0.7~1.0
+    public float stickDistance = 0.30f;  // â‰ˆ controller.radius + 0.02
+    public float maxAlignAngle = 80f;    // í—ˆìš© ê°ë„
+    public bool requireForwardInput = true;
+
+    [Header("Mantle Settings")]
+    public float topCheckHeight = 1.4f; // ìœ„ ê³µê°„ ì²´í¬ ë†’ì´
+    public float topCheckForward = 0.6f; // ë²½ ë°”ê¹¥ ê²€ì‚¬
+    public float mantleUpOffset = 0.9f; // ìœ„ë¡œ ì´ë™ëŸ‰
+    public float mantleForwardOffset = 0.4f; // ì•ìœ¼ë¡œ ì´ë™ëŸ‰
+    public float mantleDuration = 0.6f;
 
     [Header("Tuning")]
-    public float alignLerp = 15f;            // º® ¹Ù¶óº¸´Â º¸°£ ¼Óµµ
-    public float extraPush = 0.01f;          // Ãß°¡ ¹ĞÂø ¿©À¯
+    public float alignLerp = 15f;
+    public float extraPush = 0.01f;
 
     CharacterController cc;
 
@@ -20,57 +29,84 @@ public class WallClimbDetector : MonoBehaviour
     {
         if (!player) player = GetComponent<PlayerController>();
         cc = GetComponent<CharacterController>();
-        // stickDistance¸¦ ÀÚµ¿ º¸Á¤ (Ã³À½ 1È¸)
         if (stickDistance < cc.radius) stickDistance = cc.radius + 0.02f;
     }
 
     void Update()
     {
-        // Å¬¶óÀÓ ÁßÀÌ¸é Á¢Âø À¯Áö or ÇØÁ¦
+        //  ë§¨í‹€ ì¤‘ì´ë©´ ì•„ë¬´ ê²ƒë„ í•˜ì§€ ì•ŠìŒ (Move, ê°ì§€ ëª¨ë‘ ì¤‘ë‹¨)
+        if (player.isMantling) return;
+
+        // í´ë¼ì„ ìœ ì§€/í•´ì œ
         if (player.isClimbing)
         {
-            if (IsWallInFront(out RaycastHit hit))
+            if (SphereHitFront(out RaycastHit hit))
+            {
                 GlueToWall(hit);
+                player.ReportWallHit(hit.normal);
+
+                // ì í”„í‚¤ë¡œ ë§¨í‹€ ì‹œë„
+                if (Input.GetButtonDown(player.jumpAxis))
+                {
+                    if (TryMantle(hit)) return;
+                }
+            }
             else
-                player.isClimbing = false; // º® ÀÒÀ½
+            {
+                player.isClimbing = false;
+            }
             return;
         }
 
-        // Æò»ó½Ã: Àü¹æ¿¡ º®ÀÌ ÀÖ°í, (¿É¼Ç) W ÀÔ·ÂÀÌ¸é Å¬¶óÀÓ ½ÃÀÛ
-        if (IsWallInFront(out RaycastHit hitFront))
+        // í‰ì†Œ: ë²½ ê°ì§€ + (ì˜µì…˜) W ì…ë ¥ â†’ í´ë¼ì„ ì‹œì‘
+        if (SphereHitFront(out RaycastHit hitFront))
         {
             float angle = Vector3.Angle(-hitFront.normal, transform.forward);
             bool forwardInput = Input.GetAxisRaw("Vertical") > 0.1f;
             if (angle <= maxAlignAngle && (!requireForwardInput || forwardInput))
             {
                 player.isClimbing = true;
-                GlueToWall(hitFront); // ÁøÀÔ Áï½Ã ¹ĞÂø
+                GlueToWall(hitFront);
+                player.ReportWallHit(hitFront.normal);
             }
         }
     }
 
-    bool IsWallInFront(out RaycastHit hit)
+    bool SphereHitFront(out RaycastHit hit)
     {
         Vector3 origin = transform.position + Vector3.up * (cc.height * 0.5f);
+        float sphereRadius = cc.radius * 0.9f;
         Vector3 dir = transform.forward;
-        bool ok = Physics.Raycast(origin, dir, out hit, detectDistance, climbableMask, QueryTriggerInteraction.Ignore);
-        return ok;
+        return Physics.SphereCast(origin, sphereRadius, dir, out hit, detectDistance, climbableMask, QueryTriggerInteraction.Ignore);
     }
 
-    // ÇÙ½É: Move·Î º®¿¡ ¹ĞÂø + Á¤¸é Á¤·Ä
     void GlueToWall(in RaycastHit hit)
     {
-        // ÇöÀç °Å¸®¿Í ¸ñÇ¥ °Å¸®ÀÇ Â÷ÀÌ¸¦ º® ¹ı¼± ¹æÇâÀ¸·Î º¸Á¤
-        float need = hit.distance - stickDistance; // ¾ç¼ö=¸Ö´Ù
+        if (player.isMantling || !cc.enabled) return; //  Move ê°€ë“œ
+
+        float need = hit.distance - stickDistance;
         if (need > -0.0005f)
         {
             Vector3 push = -hit.normal * (need + extraPush);
-            cc.Move(push); // Position ´ë½Å Move¸¦ ¸Å ÇÁ·¹ÀÓ
+            cc.Move(push);                               // ì•ˆì „
         }
 
-        // º®À» ¹Ù¶óº¸°Ô Á¤·Ä (Pitch/Roll Á¦°Å)
         Quaternion look = Quaternion.LookRotation(-hit.normal, Vector3.up);
         transform.rotation = Quaternion.Slerp(transform.rotation, look, alignLerp * Time.deltaTime);
+    }
+
+    // ë²½ ìœ„ ê³µê°„ì´ ë¹„ì—ˆìœ¼ë©´ ë§¨í‹€ ì‹œì‘
+    bool TryMantle(in RaycastHit frontHit)
+    {
+        // ë²½ ìœ„ê°€ ëš«ë ¤ìˆëŠ”ì§€ í™•ì¸
+        Vector3 topOrigin = frontHit.point + Vector3.up * topCheckHeight - frontHit.normal * 0.05f;
+        bool blocked = Physics.Raycast(topOrigin, -frontHit.normal, topCheckForward, climbableMask, QueryTriggerInteraction.Ignore);
+        if (blocked) return false;
+
+        // ì´ë™ ë¸íƒ€ ê³„ì‚°í•˜ê³  í”Œë ˆì´ì–´ì— ìš”ì²­
+        Vector3 delta = Vector3.up * mantleUpOffset + (-frontHit.normal) * mantleForwardOffset;
+        player.StartMantle(delta, mantleDuration);
+        return true;
     }
 
 #if UNITY_EDITOR
@@ -79,8 +115,10 @@ public class WallClimbDetector : MonoBehaviour
         if (!cc) cc = GetComponent<CharacterController>();
         Gizmos.color = Color.cyan;
         Vector3 origin = transform.position + Vector3.up * (cc ? cc.height * 0.5f : 1f);
+        float sphereRadius = cc ? cc.radius * 0.9f : 0.2f;
+        Gizmos.DrawWireSphere(origin, sphereRadius);
         Gizmos.DrawLine(origin, origin + transform.forward * detectDistance);
-        Gizmos.DrawWireSphere(origin + transform.forward * stickDistance, 0.025f);
+        Gizmos.DrawWireSphere(origin + transform.forward * stickDistance, 0.03f);
     }
 #endif
 }

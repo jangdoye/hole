@@ -512,12 +512,13 @@ MonoBehaviour:
   jumpHeight: 2
   gravity: -9.81
   isClimbing: 1
-  climbSpeed: 2
+  climbSpeed: 1
+  detachGraceTime: 0.2
   groundCheck: {fileID: 0}
   groundRadius: 0.25
   groundMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 55
   coyoteTime: 0.12
   jumpBuffer: 0.12
   runKey: 304
@@ -568,6 +569,11 @@ MonoBehaviour:
   stickDistance: 0.35
   maxAlignAngle: 60
   requireForwardInput: 1
+  topCheckHeight: 1.4
+  topCheckForward: 0.6
+  mantleUpOffset: 0.9
+  mantleForwardOffset: 0.4
+  mantleDuration: 0.6
   alignLerp: 15
   extraPush: 0.01
 --- !u!1 &832575517
